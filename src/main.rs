@@ -3,7 +3,7 @@ use geng::prelude::{*, ron::de};
 const CONTROLS_LEFT: [geng::Key; 2] = [geng::Key::A, geng::Key::Left];
 const CONTROLS_RIGHT: [geng::Key; 2] = [geng::Key::D, geng::Key::Right];
 const CONTROLS_FIRE: [geng::Key; 3] = [geng::Key::W, geng::Key::Up, geng::Key::Space];
-const ANIMATION_TIME: f32 =  0.2;
+const ANIMATION_TIME: f32 =  0.3;
 
 #[derive(geng::asset::Load)]
 struct Assets {
