@@ -111,7 +111,7 @@ impl Game {
     }
 
     fn draw_tombstones(&mut self, framebuffer: &mut ugli::Framebuffer, positions: [vec2<f32>; 4]){
-        for position in self.tombstones.position {
+        for position in positions {
             self.geng.draw2d().draw2d(
                 framebuffer,
                 &self.camera,
