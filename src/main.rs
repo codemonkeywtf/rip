@@ -1,9 +1,15 @@
-use geng::prelude::{*, ron::de};
+use geng::prelude::*;
 
 const CONTROLS_LEFT: [geng::Key; 2] = [geng::Key::A, geng::Key::Left];
 const CONTROLS_RIGHT: [geng::Key; 2] = [geng::Key::D, geng::Key::Right];
 const CONTROLS_FIRE: [geng::Key; 3] = [geng::Key::W, geng::Key::Up, geng::Key::Space];
 const ANIMATION_TIME: f32 =  0.3;
+
+enum PlayerSprite {
+    Bolt(vec2<f32>),
+    Loaded(vec2<f32>),
+    Empty(vec2<f32>),
+}
 
 #[derive(geng::asset::Load)]
 struct Assets {
@@ -22,18 +28,57 @@ fn pixelate(texture: &mut ugli::Texture) {
 }
 
 struct Tombstone {
+    position: [vec2<f32>; 4],
+}
+
+struct Player {
     position: vec2<f32>,
+    has_bolt: bool,
+    sprite: [vec2<f32>; 3],
+    has_bolt_pos: vec2<f32>,
+    bolt_flight_pos: vec2<f32>,
+    lives: usize,
 }
 
 struct Game {
     geng: Geng,
     camera: geng::PixelPerfectCamera,
-    tombstones: [Tombstone; 4],
+    tombstones: Tombstone,
     assets: Assets,
-    player_pos: vec2<f32>,
+    player: Player,
     enemy_sprite: f32,
-    timer: Timer,
     animation_time: f32,
+}
+
+impl Player {
+    fn new() -> Self {
+        Self {
+            // spawn player
+                position: vec2(130.0, 80.0),
+                has_bolt: true,
+                lives: 3,
+                sprite: [
+                    vec2(0.0, 0.0),     // bolt
+                    vec2(0.0,0.5),  // !loaded
+                    vec2(0.5, 0.5), // loaded
+                ],
+                has_bolt_pos: vec2(130.0, 155.0),
+                bolt_flight_pos: vec2::ZERO,
+        }
+    }
+}
+
+impl Tombstone {
+    fn new() -> Self {
+        Self {
+            position: [
+                vec2(160.0, 180.0),
+                vec2(310.0, 180.0),
+                vec2(470.0, 180.0),
+                vec2(620.0, 180.0),
+            ]
+        }
+    }
 }
 
 impl Game {
@@ -42,27 +87,12 @@ impl Game {
             geng: geng.clone(),
             camera: geng::PixelPerfectCamera,
             assets,
-            player_pos: vec2(130.0,80.0),
             enemy_sprite: 0.0,
             animation_time: 0.3,
-            timer: Timer::new(),
 
-            // spawn tombstones
-            tombstones: {
-                let tombstone_0 = Tombstone {
-                    position: vec2(160.0, 180.0),
-                };
-                let tombstone_1 = Tombstone {
-                    position: vec2(310.0, 180.0),
-                };
-                let tombstone_2 = Tombstone {
-                    position: vec2(470.0, 180.0),
-                };
-                let tombstone_3 = Tombstone {
-                    position: vec2(620.0, 180.0),
-                };
-                [tombstone_0, tombstone_1, tombstone_2, tombstone_3]
-            },
+            // spawn assets
+            player: Player::new(),
+            tombstones: Tombstone::new(),
         }
     }
 
@@ -79,23 +109,48 @@ impl Game {
             .translate(position),
         );
     }
+
+    fn draw_tombstones(&mut self, framebuffer: &mut ugli::Framebuffer, positions: [vec2<f32>; 4]){
+        for position in self.tombstones.position {
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                &self.camera,
+                &draw2d::TexturedQuad::unit(&self.assets.tombstone)
+                .scale_uniform(48.0)
+                .translate(position),
+                )
+        }
+    }
 }
 
 impl geng::State for Game {
+
+    fn handle_event(&mut self, event: geng::Event) {
+        if matches!(
+            event,
+            geng::Event::KeyDown {
+                key: geng::Key::Space
+            }
+        ){
+            println!("FIRE!");
+        }
+    }
+
     fn update(&mut self, delta_time: f64) {
         let delta_time = delta_time as f32;
-        self.animation_time -= delta_time;
          // player move
         if self.geng.window().is_key_pressed(geng::Key::A) {
-            self.player_pos.x -= delta_time*200.0;
-            if self.player_pos.x <= 35.0 {self.player_pos.x = 35.0}
+            self.player.position.x -= delta_time*200.0;
+            if self.player.position.x <= 35.0 {self.player.position.x = 35.0}
         }
 
         if self.geng.window().is_key_pressed(geng::Key::D) {
-            self.player_pos.x += delta_time*200.0;
-            if self.player_pos.x >= 765.0 {self.player_pos.x = 765.0}
+            self.player.position.x += delta_time*200.0;
+            if self.player.position.x >= 765.0 {self.player.position.x = 765.0}
         }
 
+        // enemy animation
+        self.animation_time -= delta_time;
         if self.animation_time < 0.0 {
             self.enemy_sprite += 0.25;
             if self.enemy_sprite == 1.0 {self.enemy_sprite = 0.0}
@@ -118,17 +173,6 @@ impl geng::State for Game {
         );
 
 
-
-        for tombstone in &self.tombstones {
-            self.geng.draw2d().draw2d(
-                framebuffer,
-                &self.camera,
-                &draw2d::TexturedQuad::unit(&self.assets.tombstone)
-                    .scale_uniform(48.0)
-                    .translate(tombstone.position),
-            )
-        }
-
         // self.geng.draw2d().draw2d(
         //     framebuffer,
         //     &self.camera,
@@ -143,7 +187,7 @@ impl geng::State for Game {
             &self.camera,
             &draw2d::TexturedQuad::unit(&self.assets.crossbow)
                 .scale_uniform(38.0)
-                .translate(self.player_pos)
+                .translate(self.player.position)
                 .sub_texture(Aabb2::point(vec2(0.5, 0.5)).extend_positive(vec2::splat(0.5))),
         );
 
@@ -152,8 +196,8 @@ impl geng::State for Game {
             &self.camera,
             &draw2d::TexturedQuad::unit(&self.assets.crossbow)
                 .scale_uniform(38.0)
-                .translate(vec2(self.player_pos.x, self.player_pos.y+25.0))
-                .sub_texture(Aabb2::ZERO.extend_positive(vec2::splat(0.5))),
+                .translate(vec2(self.player.position.x, self.player.position.y+25.0))
+                .sub_texture(Aabb2::point(self.player.sprite[0]).extend_positive(vec2::splat(0.5))),
         );
 
         self.geng.draw2d().draw2d(
@@ -167,7 +211,9 @@ impl geng::State for Game {
 
         let score = 420;
         let position = vec2(400.0, 770.0);
-        self.draw_score(framebuffer, position, score)
+        self.draw_score(framebuffer, position, score);
+        self.draw_tombstones(framebuffer, self.tombstones.position);
+
     }
 }
 
