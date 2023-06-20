@@ -3,14 +3,9 @@ use geng::prelude::*;
 const CONTROLS_LEFT: [geng::Key; 2] = [geng::Key::A, geng::Key::Left];
 const CONTROLS_RIGHT: [geng::Key; 2] = [geng::Key::D, geng::Key::Right];
 const CONTROLS_FIRE: [geng::Key; 3] = [geng::Key::W, geng::Key::Up, geng::Key::Space];
-const ANIMATION_TIME: f32 =  0.3;
+const ANIMATION_TIME: f32 =  0.2;
 const BOLT_SPEED: f32 = 400.0;
-
-enum PlayerSprite {
-    Bolt(vec2<f32>),
-    Loaded(vec2<f32>),
-    Empty(vec2<f32>),
-}
+const MARCH_SPEED: f32 = 60.0;
 
 #[derive(geng::asset::Load)]
 struct Assets {
@@ -32,6 +27,19 @@ struct Tombstone {
     position: [vec2<f32>; 4],
 }
 
+impl Tombstone {
+    fn new() -> Self {
+        Self {
+            position: [
+                vec2(160.0, 150.0),
+                vec2(310.0, 150.0),
+                vec2(470.0, 150.0),
+                vec2(620.0, 150.0),
+            ]
+        }
+    }
+}
+
 struct Player {
     position: vec2<f32>,
     has_bolt: bool,
@@ -40,46 +48,64 @@ struct Player {
     lives: usize,
 }
 
+impl Player {
+    fn new() -> Self {
+        Self {
+            // spawn player
+            position: vec2(130.0, 50.0),
+            has_bolt: true,
+            lives: 3,
+            sprite: [
+                vec2(0.0, 0.0),     // bolt
+                vec2(0.0,0.5),  // !loaded
+                vec2(0.5, 0.5), // loaded
+            ],
+            bolt_flight_pos: vec2::ZERO,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Skeleton {
+    position: vec2<f32>,
+    dead: bool,
+    can_throw: bool,
+    frame: [f32;4] ,
+    cell: usize,
+}
+
+impl Skeleton {
+    fn init() ->  Vec<Skeleton> {
+        let mut skeletons: Vec<Skeleton> = Vec::new();
+
+        for y in (320..720).step_by(90){
+            for x in (125..675).step_by(50){
+                skeletons.push(Skeleton {
+                    position: vec2(x as f32, y as f32),
+                    dead: false,
+                    can_throw: false,
+                    frame: [0.0,0.25,0.50,0.75],
+                    cell: 0,
+                })
+            }
+        }
+        skeletons
+    }
+}
+
 struct Game {
     geng: Geng,
     camera: geng::PixelPerfectCamera,
     tombstones: Tombstone,
     assets: Assets,
     player: Player,
-    enemy_sprite: f32,
+    skeletons: Vec<Skeleton>,
+    skeleton_cell: usize,
     animation_time: f32,
     speed: f32,
     score: f32,
-}
-
-impl Player {
-    fn new() -> Self {
-        Self {
-            // spawn player
-                position: vec2(130.0, 80.0),
-                has_bolt: true,
-                lives: 3,
-                sprite: [
-                    vec2(0.0, 0.0),     // bolt
-                    vec2(0.0,0.5),  // !loaded
-                    vec2(0.5, 0.5), // loaded
-                ],
-                bolt_flight_pos: vec2::ZERO,
-        }
-    }
-}
-
-impl Tombstone {
-    fn new() -> Self {
-        Self {
-            position: [
-                vec2(160.0, 180.0),
-                vec2(310.0, 180.0),
-                vec2(470.0, 180.0),
-                vec2(620.0, 180.0),
-            ]
-        }
-    }
+    dx: f32,
+    dy: f32,
 }
 
 impl Game {
@@ -88,12 +114,15 @@ impl Game {
             geng: geng.clone(),
             camera: geng::PixelPerfectCamera,
             assets,
-            enemy_sprite: 0.0,
-            animation_time: 0.3,
-            speed: 5.,
+            animation_time: ANIMATION_TIME,
+            speed: -40.,
             score: 420.0,
 
             // spawn assets
+            skeletons: Skeleton::init(),
+            skeleton_cell: 0,
+            dx: 0.0,
+            dy: 0.0,
             player: Player::new(),
             tombstones: Tombstone::new(),
         }
@@ -111,6 +140,22 @@ impl Game {
             .scale_uniform(18.0)
             .translate(position),
         );
+    }
+
+    fn draw_skeletons(&mut self, framebuffer: &mut ugli::Framebuffer, dx: f32, dy: f32, cell: usize){
+        for skeleton in &self.skeletons {
+            //&skeleton.position.x = skeleton.position.x - dx;
+            //let  mut x = &skeleton.position.x.clone();
+            //x = &(x - dx);
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                &self.camera,
+                &draw2d::TexturedQuad::unit(&self.assets.skeleton)
+                .scale_uniform(35.0)
+                .translate(vec2(skeleton.position.x+dx , skeleton.position.y + dy))
+                .sub_texture(Aabb2::point(vec2(skeleton.frame[cell],0.0)).extend_positive(vec2(0.25,1.0))),
+                )
+        }
     }
 
     fn draw_tombstones(&mut self, framebuffer: &mut ugli::Framebuffer, positions: [vec2<f32>; 4]){
@@ -149,7 +194,6 @@ impl Game {
 }
 
 impl geng::State for Game {
-
     fn handle_event(&mut self, event: geng::Event) {
         if matches!(
             event,
@@ -180,10 +224,27 @@ impl geng::State for Game {
         // enemy animation
         self.animation_time -= delta_time;
         if self.animation_time < 0.0 {
-            self.enemy_sprite += 0.25;
-            if self.enemy_sprite == 1.0 {self.enemy_sprite = 0.0}
+            self.skeleton_cell += 1;
+            self.skeleton_cell = self.skeleton_cell % 4;
             self.animation_time = ANIMATION_TIME;
         }
+
+        // enemy march
+        for skeleton in &self.skeletons {
+            println!("{}", self.dx);
+            if self.dx < -106.0 {
+                println!("{},{},{}", self.speed, delta_time, self.dx);
+                self.speed = -(self.speed);
+                self.dy -= 15.0;
+                break;
+            }
+            if skeleton.position.x + self.dx > 780.0 {
+                self.speed = -(self.speed);
+                self.dy -= 15.0;
+                break;
+            }
+        }
+        self.dx += self.speed * delta_time;
 
         if !self.player.has_bolt {
             self.player.bolt_flight_pos.y += BOLT_SPEED *delta_time;
@@ -191,12 +252,6 @@ impl geng::State for Game {
 
         if self.player.bolt_flight_pos.y > 810.0 {
             self.player.has_bolt = true;
-        }
-
-        self.speed -= delta_time;
-        if self.speed < 0.0 {
-            self.speed = 5.;
-            self.score += 20.;
         }
 
     }
@@ -214,17 +269,6 @@ impl geng::State for Game {
             None,
         );
 
-
-        // self.geng.draw2d().draw2d(
-        //     framebuffer,
-        //     &self.camera,
-        //     &draw2d::TexturedQuad::unit(&self.assets.crossbow)
-        //         .scale_uniform(48.0)
-        //         .translate(vec2(130.0, 80.0))
-        //         .sub_texture(Aabb2::point(vec2(0., 0.5)).extend_positive(vec2::splat(0.5))),
-        // );
-
-
         let player: vec2<f32>;
         if self.player.has_bolt {
             player = self.player.sprite[2];
@@ -233,20 +277,11 @@ impl geng::State for Game {
             player = self.player.sprite[1];
         }
 
-        self.draw_player(framebuffer, self.player.position, player);
-        self.draw_bolt(framebuffer, self.player.bolt_flight_pos, self.player.sprite[0]);
-
-        self.geng.draw2d().draw2d(
-            framebuffer,
-            &self.camera,
-            &draw2d::TexturedQuad::unit(&self.assets.skeleton)
-                .scale_uniform(38.0)
-                .translate(vec2(400.0, 400.0))
-                .sub_texture(Aabb2::point(vec2(self.enemy_sprite,0.0)).extend_positive(vec2(0.25,1.0))),
-        );
-
         self.draw_score(framebuffer, vec2(400.0, 770.0), self.score);
         self.draw_tombstones(framebuffer, self.tombstones.position);
+        self.draw_skeletons(framebuffer, self.dx, self.dy, self.skeleton_cell);
+        self.draw_player(framebuffer, self.player.position, player);
+        self.draw_bolt(framebuffer, self.player.bolt_flight_pos, self.player.sprite[0]);
     }
 }
 
@@ -254,7 +289,7 @@ fn main() {
     logger::init();
     geng::setup_panic_handler();
     let geng = Geng::new_with(geng::ContextOptions {
-        title: "RIP".to_owned(),
+        //title: "RIP".to_owned(),
         window_size: Some(vec2(800, 800)),
         ..default()
     });
