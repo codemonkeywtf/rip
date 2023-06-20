@@ -71,7 +71,6 @@ struct Skeleton {
     dead: bool,
     can_throw: bool,
     frame: [f32; 4],
-    cell: usize,
 }
 
 impl Skeleton {
@@ -85,7 +84,6 @@ impl Skeleton {
                     dead: false,
                     can_throw: false,
                     frame: [0.0, 0.25, 0.50, 0.75],
-                    cell: 0,
                 })
             }
         }
@@ -121,8 +119,8 @@ impl Game {
             // spawn assets
             skeletons: Skeleton::init(),
             skeleton_cell: 0,
-            dx: 0.0,
-            dy: 0.0,
+            dx: 60.0,
+            dy: 10.0,
             player: Player::new(),
             tombstones: Tombstone::new(),
         }
@@ -145,20 +143,18 @@ impl Game {
     fn draw_skeletons(
         &mut self,
         framebuffer: &mut ugli::Framebuffer,
-        dx: f32,
-        dy: f32,
+        mut skeletons: Vec<Skeleton>,
         cell: usize,
     ) {
-        for skeleton in &self.skeletons {
-            //&skeleton.position.x = skeleton.position.x - dx;
-            //let  mut x = &skeleton.position.x.clone();
-            //x = &(x - dx);
+        for skeleton in &mut skeletons {
+            // skeleton.position.x = skeleton.position.x + dx;
+            // skeleton.position.y = skeleton.position.y + dy;
             self.geng.draw2d().draw2d(
                 framebuffer,
                 &self.camera,
                 &draw2d::TexturedQuad::unit(&self.assets.skeleton)
                     .scale_uniform(35.0)
-                    .translate(vec2(skeleton.position.x + dx, skeleton.position.y + dy))
+                    .translate(skeleton.position)
                     .sub_texture(
                         Aabb2::point(vec2(skeleton.frame[cell], 0.0))
                             .extend_positive(vec2(0.25, 1.0)),
@@ -253,21 +249,20 @@ impl geng::State for Game {
         }
 
         // enemy march
-        for skeleton in &self.skeletons {
-            println!("{}", self.dx);
-            if self.dx < -106.0 {
-                println!("{},{},{}", self.speed, delta_time, self.dx);
-                self.speed = -(self.speed);
-                self.dy -= 15.0;
+        for skeleton in &mut self.skeletons {
+            if skeleton.position.x < 25.0 || skeleton.position.x > 770.0 {
+                self.dx = -self.dx;
+                self.dy = 15.0;
                 break;
-            }
-            if skeleton.position.x + self.dx > 780.0 {
-                self.speed = -(self.speed);
-                self.dy -= 15.0;
-                break;
+            } else {
+                self.dy = 0.0;
             }
         }
-        self.dx += self.speed * delta_time;
+        for skeleton in &mut self.skeletons {
+            skeleton.position.y -= self.dy;
+            skeleton.position.x -= self.dx * delta_time;
+            skeleton.position = vec2(skeleton.position.x, skeleton.position.y);
+        }
 
         if !self.player.has_bolt {
             self.player.bolt_flight_pos.y += BOLT_SPEED * delta_time;
@@ -301,7 +296,7 @@ impl geng::State for Game {
 
         self.draw_score(framebuffer, vec2(400.0, 770.0), self.score);
         self.draw_tombstones(framebuffer, self.tombstones.position);
-        self.draw_skeletons(framebuffer, self.dx, self.dy, self.skeleton_cell);
+        self.draw_skeletons(framebuffer, self.skeletons.clone(), self.skeleton_cell);
         self.draw_player(framebuffer, self.player.position, player);
         self.draw_bolt(
             framebuffer,
