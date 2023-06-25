@@ -3,7 +3,7 @@ use geng::prelude::*;
 const CONTROLS_LEFT: [geng::Key; 2] = [geng::Key::A, geng::Key::Left];
 const CONTROLS_RIGHT: [geng::Key; 2] = [geng::Key::D, geng::Key::Right];
 const CONTROLS_FIRE: [geng::Key; 3] = [geng::Key::W, geng::Key::Up, geng::Key::Space];
-const ANIMATION_TIME: f32 = 0.2;
+const ANIMATION_TIME: f32 = 0.25;
 const BOLT_SPEED: f32 = 400.0;
 const MARCH_SPEED: f32 = 60.0;
 
@@ -65,8 +65,9 @@ impl Player {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct Skeleton {
+    size: vec2<f32>,
     position: vec2<f32>,
     dead: bool,
     can_throw: bool,
@@ -77,9 +78,10 @@ impl Skeleton {
     fn init() -> Vec<Skeleton> {
         let mut skeletons: Vec<Skeleton> = Vec::new();
 
-        for y in (320..720).step_by(90) {
-            for x in (125..675).step_by(50) {
+        for x in (125..675).step_by(50) {
+            for y in (320..770).step_by(90) {
                 skeletons.push(Skeleton {
+                    size: vec2(40.0, 40.0),
                     position: vec2(x as f32, y as f32),
                     dead: false,
                     can_throw: false,
@@ -93,51 +95,91 @@ impl Skeleton {
 
 struct Game {
     geng: Geng,
-    camera: geng::PixelPerfectCamera,
+    camera: geng::Camera2d, //PixelPerfectCamera,
     tombstones: Tombstone,
     assets: Assets,
     player: Player,
     skeletons: Vec<Skeleton>,
     skeleton_cell: usize,
     animation_time: f32,
-    speed: f32,
-    score: f32,
+    score: usize,
     dx: f32,
     dy: f32,
+    fade_in_out: f32,
+    fx: f32,
+    game_over: bool,
 }
 
 impl Game {
     fn new(geng: &Geng, assets: Assets) -> Self {
+        let size = vec2(800.0, 800.0);
         Self {
             geng: geng.clone(),
-            camera: geng::PixelPerfectCamera,
+            camera: geng::Camera2d {
+                center: size / 2.0,
+                fov: size.y,
+                rotation: Angle::ZERO,
+            },
             assets,
             animation_time: ANIMATION_TIME,
-            speed: -40.,
-            score: 420.0,
+            score: 420,
 
             // spawn assets
             skeletons: Skeleton::init(),
             skeleton_cell: 0,
-            dx: 60.0,
+            dx: 10.0,
             dy: 10.0,
+            fade_in_out: 1.0,
+            fx: 0.2,
             player: Player::new(),
             tombstones: Tombstone::new(),
+            game_over: false,
         }
     }
 
-    fn draw_score(&mut self, framebuffer: &mut ugli::Framebuffer, position: vec2<f32>, score: f32) {
+    fn draw_score(&mut self, framebuffer: &mut ugli::Framebuffer, position: vec2<f32>) {
         self.geng.draw2d().draw2d(
             framebuffer,
             &self.camera,
             &draw2d::Text::unit(
                 &self.assets.font,
-                &("SCORE: ".to_owned() + &(score.to_string()).to_owned()),
-                Rgba::RED,
+                "SCORE: ".to_string(),
+                Rgba {
+                    r: 0.8,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
             )
             .scale_uniform(18.0)
             .translate(position),
         );
+        self.geng.draw2d().draw2d(
+            framebuffer,
+            &self.camera,
+            &draw2d::Text::unit(&self.assets.font, &(self.score.to_string()), Rgba::RED)
+                .scale_uniform(14.0)
+                .translate(vec2(position.x + 100.0, position.y)),
+        )
+    }
+
+    fn draw_game_over(&mut self, framebuffer: &mut ugli::Framebuffer, fade_in_out: f32) {
+        self.geng.draw2d().draw2d(
+            framebuffer,
+            &self.camera,
+            &draw2d::Text::unit(
+                &self.assets.font,
+                "G A M E  O V E R".to_string(),
+                Rgba {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: fade_in_out,
+                },
+            )
+            .scale_uniform(32.0)
+            .translate(vec2(400.0, 400.0)),
+        )
     }
 
     fn draw_skeletons(
@@ -147,13 +189,11 @@ impl Game {
         cell: usize,
     ) {
         for skeleton in &mut skeletons {
-            // skeleton.position.x = skeleton.position.x + dx;
-            // skeleton.position.y = skeleton.position.y + dy;
             self.geng.draw2d().draw2d(
                 framebuffer,
                 &self.camera,
                 &draw2d::TexturedQuad::unit(&self.assets.skeleton)
-                    .scale_uniform(35.0)
+                    .scale(skeleton.size)
                     .translate(skeleton.position)
                     .sub_texture(
                         Aabb2::point(vec2(skeleton.frame[cell], 0.0))
@@ -161,6 +201,16 @@ impl Game {
                     ),
             )
         }
+    }
+
+    fn update_skeletons(
+        &mut self,
+        mut skeletons: Vec<Skeleton>,
+        skeleton_x_start: f32,
+        skeleton_y_start: f32,
+    ) {
+        let start_x = skeleton_x_start as usize;
+        let start_y = skeleton_y_start as usize;
     }
 
     fn draw_tombstones(&mut self, framebuffer: &mut ugli::Framebuffer, positions: [vec2<f32>; 4]) {
@@ -225,6 +275,17 @@ impl geng::State for Game {
 
     fn update(&mut self, delta_time: f64) {
         let delta_time = delta_time as f32;
+
+        if self.game_over {
+            if self.fade_in_out <= 0.3 {
+                self.fx = 0.4;
+            }
+            if self.fade_in_out >= 1.0 {
+                self.fx = -0.4;
+            }
+            self.fade_in_out += delta_time * self.fx;
+        }
+
         // player move
         if self.geng.window().is_key_pressed(geng::Key::A) {
             self.player.position.x -= delta_time * 200.0;
@@ -250,17 +311,44 @@ impl geng::State for Game {
 
         // enemy march
         for skeleton in &mut self.skeletons {
-            if skeleton.position.x < 25.0 || skeleton.position.x > 770.0 {
-                self.dx = -self.dx;
-                self.dy = 15.0;
+            if skeleton.position.x < 30.0 {
+                self.score = 694200000;
+                self.dx = -10.0;
+                self.dy = 10.0;
+                break;
+            } else {
+                self.dy = 0.0;
+            }
+            if skeleton.position.x > 780.0 {
+                self.score = 69000;
+                self.dx = 10.0;
+                self.dy = 10.0;
                 break;
             } else {
                 self.dy = 0.0;
             }
         }
+
+        for skeleton in &mut self.skeletons {
+            if skeleton.position.y <= self.player.position.y + 70.0
+                && skeleton.position.x as usize == self.player.position.x as usize
+            {
+                self.dx = 10.0;
+                self.dy = 0.0;
+                self.skeletons = Skeleton::init();
+                break;
+            } else if skeleton.position.y < self.player.position.y {
+                self.dx = 10.0;
+                self.dy = 0.0;
+                self.skeletons = Skeleton::init();
+                break;
+            }
+        }
+
+        let d_time = delta_time * 4.0;
         for skeleton in &mut self.skeletons {
             skeleton.position.y -= self.dy;
-            skeleton.position.x -= self.dx * delta_time;
+            skeleton.position.x -= self.dx * d_time;
             skeleton.position = vec2(skeleton.position.x, skeleton.position.y);
         }
 
@@ -294,7 +382,7 @@ impl geng::State for Game {
             player = self.player.sprite[1];
         }
 
-        self.draw_score(framebuffer, vec2(400.0, 770.0), self.score);
+        self.draw_score(framebuffer, vec2(400.0, 770.0));
         self.draw_tombstones(framebuffer, self.tombstones.position);
         self.draw_skeletons(framebuffer, self.skeletons.clone(), self.skeleton_cell);
         self.draw_player(framebuffer, self.player.position, player);
@@ -303,6 +391,9 @@ impl geng::State for Game {
             self.player.bolt_flight_pos,
             self.player.sprite[0],
         );
+        if self.game_over {
+            self.draw_game_over(framebuffer, self.fade_in_out);
+        }
     }
 }
 
