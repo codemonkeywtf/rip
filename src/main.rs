@@ -205,7 +205,7 @@ impl Game {
 
     fn update_skeletons(
         &mut self,
-        mut skeletons: Vec<Skeleton>,
+        skeletons: Vec<Skeleton>,
         skeleton_x_start: f32,
         skeleton_y_start: f32,
     ) {
