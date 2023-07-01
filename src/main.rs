@@ -53,6 +53,7 @@ impl Player {
         Self {
             // spawn player
             position: vec2(130.0, 50.0),
+            bolt_flight_pos: vec2(0.0, 0.0),
             has_bolt: true,
             lives: 3,
             sprite: [
@@ -60,12 +61,11 @@ impl Player {
                 vec2(0.0, 0.5), // !loaded
                 vec2(0.5, 0.5), // loaded
             ],
-            bolt_flight_pos: vec2::ZERO,
         }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 struct Skeleton {
     size: vec2<f32>,
     position: vec2<f32>,
@@ -95,7 +95,7 @@ impl Skeleton {
 
 struct Game {
     geng: Geng,
-    camera: geng::Camera2d, //PixelPerfectCamera,
+    camera: geng::Camera2d,
     tombstones: Tombstone,
     assets: Assets,
     player: Player,
@@ -122,7 +122,7 @@ impl Game {
             },
             assets,
             animation_time: ANIMATION_TIME,
-            score: 420,
+            score: 0,
 
             // spawn assets
             skeletons: Skeleton::init(),
@@ -189,17 +189,17 @@ impl Game {
         cell: usize,
     ) {
         for skeleton in &mut skeletons {
-            self.geng.draw2d().draw2d(
-                framebuffer,
-                &self.camera,
-                &draw2d::TexturedQuad::unit(&self.assets.skeleton)
-                    .scale(skeleton.size)
-                    .translate(skeleton.position)
-                    .sub_texture(
-                        Aabb2::point(vec2(skeleton.frame[cell], 0.0))
-                            .extend_positive(vec2(0.25, 1.0)),
-                    ),
-            )
+                self.geng.draw2d().draw2d(
+                    framebuffer,
+                    &self.camera,
+                    &draw2d::TexturedQuad::unit(&self.assets.skeleton)
+                        .scale(skeleton.size)
+                        .translate(skeleton.position)
+                        .sub_texture(
+                            Aabb2::point(vec2(skeleton.frame[cell], 0.0))
+                                .extend_positive(vec2(0.25, 1.0)),
+                        ),
+                );
         }
     }
 
@@ -301,6 +301,7 @@ impl geng::State for Game {
             }
         }
 
+
         // enemy animation
         self.animation_time -= delta_time;
         if self.animation_time < 0.0 {
@@ -311,16 +312,14 @@ impl geng::State for Game {
 
         // enemy march
         for skeleton in &mut self.skeletons {
-            if skeleton.position.x < 30.0 {
-                self.score = 694200000;
+            if skeleton.position.x < 30.0 && !skeleton.dead {
                 self.dx = -10.0;
                 self.dy = 10.0;
                 break;
             } else {
                 self.dy = 0.0;
             }
-            if skeleton.position.x > 780.0 {
-                self.score = 69000;
+            if skeleton.position.x > 780.0 && !skeleton.dead {
                 self.dx = 10.0;
                 self.dy = 10.0;
                 break;
@@ -330,6 +329,15 @@ impl geng::State for Game {
         }
 
         for skeleton in &mut self.skeletons {
+            let aabb_player = Aabb2::point(vec2(16.0,0.0)).extend_positive(vec2(2.0,16.0)).translate(self.player.bolt_flight_pos);
+            let aabb_skeleton = Aabb2::point(vec2(0.0,0.0)).extend_uniform(32.0).translate(skeleton.position);
+            if aabb_skeleton.intersects(&aabb_player){
+                self.player.has_bolt = true;
+                skeleton.dead = true;
+                self.score += 100;
+                self.skeletons.retain(|skeleton| skeleton.dead == false);
+                break;
+            }
             if skeleton.position.y <= self.player.position.y + 70.0
                 && skeleton.position.x as usize == self.player.position.x as usize
             {
