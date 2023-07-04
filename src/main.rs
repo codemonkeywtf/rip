@@ -441,13 +441,13 @@ impl geng::State for Game {
             self.player.bolt_flight_pos,
             self.player.sprite[0],
         );
-        for skeleton in self.skeletons.clone() {
-            self.draw_bolt(
-                framebuffer,
-                vec2(skeleton.position.x - 20.0, skeleton.position.y - 20.0),
-                self.player.sprite[0],
-            );
-        }
+        // for skeleton in self.skeletons.clone() {
+        //     self.draw_bolt(
+        //         framebuffer,
+        //         vec2(skeleton.position.x - 20.0, skeleton.position.y - 20.0),
+        //         self.player.sprite[0],
+        //     );
+        // }
         if self.game_over {
             self.draw_game_over(framebuffer, self.fade_in_out);
         }
