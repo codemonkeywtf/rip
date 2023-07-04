@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 geng = {git = "https://github.com/geng-engine/geng", branch = "main"}
+
+[profile.dev."*"]
+opt-level = 3

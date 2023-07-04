@@ -31,10 +31,10 @@ impl Tombstone {
     fn new() -> Self {
         Self {
             position: [
-                vec2(160.0, 150.0),
-                vec2(310.0, 150.0),
-                vec2(470.0, 150.0),
-                vec2(620.0, 150.0),
+                vec2(100.0, 200.0),
+                vec2(270.0, 200.0),
+                vec2(440.0, 200.0),
+                vec2(610.0, 200.0),
             ],
         }
     }
@@ -52,7 +52,7 @@ impl Player {
     fn new() -> Self {
         Self {
             // spawn player
-            position: vec2(130.0, 50.0),
+            position: vec2(100.0, 100.0),
             bolt_flight_pos: vec2(0.0, 0.0),
             has_bolt: true,
             lives: 3,
@@ -108,6 +108,8 @@ struct Game {
     fade_in_out: f32,
     fx: f32,
     game_over: bool,
+    wait: f32,
+    collision_player: bool,
 }
 
 impl Game {
@@ -134,6 +136,8 @@ impl Game {
             player: Player::new(),
             tombstones: Tombstone::new(),
             game_over: false,
+            wait: 0.0,
+            collision_player: false,
         }
     }
 
@@ -189,28 +193,19 @@ impl Game {
         cell: usize,
     ) {
         for skeleton in &mut skeletons {
-                self.geng.draw2d().draw2d(
-                    framebuffer,
-                    &self.camera,
-                    &draw2d::TexturedQuad::unit(&self.assets.skeleton)
-                        .scale(skeleton.size)
-                        .translate(skeleton.position)
-                        .sub_texture(
-                            Aabb2::point(vec2(skeleton.frame[cell], 0.0))
-                                .extend_positive(vec2(0.25, 1.0)),
-                        ),
-                );
+            self.geng.draw2d().draw2d(
+                framebuffer,
+                &self.camera,
+                &draw2d::TexturedQuad::unit(&self.assets.skeleton)
+                    .align_bounding_box(vec2(0.0, 1.0))
+                    .scale(skeleton.size)
+                    .translate(skeleton.position)
+                    .sub_texture(
+                        Aabb2::point(vec2(skeleton.frame[cell], 0.0))
+                            .extend_positive(vec2(0.25, 1.0)),
+                    ),
+            );
         }
-    }
-
-    fn update_skeletons(
-        &mut self,
-        skeletons: Vec<Skeleton>,
-        skeleton_x_start: f32,
-        skeleton_y_start: f32,
-    ) {
-        let start_x = skeleton_x_start as usize;
-        let start_y = skeleton_y_start as usize;
     }
 
     fn draw_tombstones(&mut self, framebuffer: &mut ugli::Framebuffer, positions: [vec2<f32>; 4]) {
@@ -219,6 +214,7 @@ impl Game {
                 framebuffer,
                 &self.camera,
                 &draw2d::TexturedQuad::unit(&self.assets.tombstone)
+                    .align_bounding_box(vec2(0.0, 1.0))
                     .scale_uniform(48.0)
                     .translate(position),
             )
@@ -235,6 +231,7 @@ impl Game {
             framebuffer,
             &self.camera,
             &draw2d::TexturedQuad::unit(&self.assets.crossbow)
+                .align_bounding_box(vec2(0.0, 1.0))
                 .scale_uniform(38.0)
                 .translate(position)
                 .sub_texture(Aabb2::point(sprite).extend_positive(vec2::splat(0.5))),
@@ -251,6 +248,7 @@ impl Game {
             framebuffer,
             &self.camera,
             &draw2d::TexturedQuad::unit(&self.assets.crossbow)
+                .align_bounding_box(vec2(0.0, 1.0))
                 .scale_uniform(38.0)
                 .translate(vec2(position.x, position.y + 25.0))
                 .sub_texture(Aabb2::point(sprite).extend_positive(vec2::splat(0.5))),
@@ -268,7 +266,7 @@ impl geng::State for Game {
         ) {
             if self.player.has_bolt {
                 self.player.has_bolt = false;
-                self.player.bolt_flight_pos = self.player.position;
+                self.player.bolt_flight_pos.x = self.player.position.x;
             }
         }
     }
@@ -287,20 +285,21 @@ impl geng::State for Game {
         }
 
         // player move
-        if self.geng.window().is_key_pressed(geng::Key::A) {
-            self.player.position.x -= delta_time * 200.0;
-            if self.player.position.x <= 35.0 {
-                self.player.position.x = 35.0
+        if !self.collision_player {
+            if self.geng.window().is_key_pressed(geng::Key::A) {
+                self.player.position.x -= delta_time * 200.0;
+                if self.player.position.x <= 0.0 {
+                    self.player.position.x = 0.0
+                }
+            }
+
+            if self.geng.window().is_key_pressed(geng::Key::D) {
+                self.player.position.x += delta_time * 200.0;
+                if self.player.position.x >= 726.0 {
+                    self.player.position.x = 726.0
+                }
             }
         }
-
-        if self.geng.window().is_key_pressed(geng::Key::D) {
-            self.player.position.x += delta_time * 200.0;
-            if self.player.position.x >= 765.0 {
-                self.player.position.x = 765.0
-            }
-        }
-
 
         // enemy animation
         self.animation_time -= delta_time;
@@ -312,14 +311,14 @@ impl geng::State for Game {
 
         // enemy march
         for skeleton in &mut self.skeletons {
-            if skeleton.position.x < 30.0 && !skeleton.dead {
+            if skeleton.position.x < 0.0 - 22.0 && !skeleton.dead {
                 self.dx = -10.0;
                 self.dy = 10.0;
                 break;
             } else {
                 self.dy = 0.0;
             }
-            if skeleton.position.x > 780.0 && !skeleton.dead {
+            if skeleton.position.x > 728.0 && !skeleton.dead {
                 self.dx = 10.0;
                 self.dy = 10.0;
                 break;
@@ -329,35 +328,63 @@ impl geng::State for Game {
         }
 
         for skeleton in &mut self.skeletons {
-            let aabb_player = Aabb2::point(vec2(16.0,0.0)).extend_positive(vec2(2.0,16.0)).translate(self.player.bolt_flight_pos);
-            let aabb_skeleton = Aabb2::point(vec2(0.0,0.0)).extend_uniform(32.0).translate(skeleton.position);
-            if aabb_skeleton.intersects(&aabb_player){
+            let aabb_player = Aabb2::point(vec2::ZERO)
+                .extend_positive(vec2::splat(38.0))
+                .translate(self.player.position);
+            let aabb_bolt = Aabb2::point(vec2(15.0, 0.0))
+                .extend_positive(vec2(2.0, 16.0))
+                .translate(self.player.bolt_flight_pos);
+            let aabb_skeleton = Aabb2::point(vec2(4.0, 0.0))
+                .extend_positive(vec2(26.0, 32.0))
+                .translate(skeleton.position);
+
+            if aabb_skeleton.intersects(&aabb_bolt) && !self.player.has_bolt {
                 self.player.has_bolt = true;
                 skeleton.dead = true;
                 self.score += 100;
                 self.skeletons.retain(|skeleton| skeleton.dead == false);
                 break;
             }
-            if skeleton.position.y <= self.player.position.y + 70.0
-                && skeleton.position.x as usize == self.player.position.x as usize
-            {
-                self.dx = 10.0;
-                self.dy = 0.0;
-                self.skeletons = Skeleton::init();
-                break;
+
+            if aabb_skeleton.intersects(&aabb_player) {
+                self.collision_player = true;
+                self.wait += delta_time;
+                if self.wait > 3.0 {
+                    self.wait = 0.0;
+                    self.dx = 10.0;
+                    self.dy = 0.0;
+                    self.collision_player = false;
+                    self.skeletons = Skeleton::init();
+                    break;
+                }
             } else if skeleton.position.y < self.player.position.y {
-                self.dx = 10.0;
-                self.dy = 0.0;
-                self.skeletons = Skeleton::init();
-                break;
+                self.wait += delta_time;
+                if self.wait > 3.0 {
+                    self.wait = 0.0;
+                    self.dx = 10.0;
+                    self.dy = 0.0;
+                    self.skeletons = Skeleton::init();
+                    break;
+                }
             }
         }
 
-        let d_time = delta_time * 4.0;
-        for skeleton in &mut self.skeletons {
-            skeleton.position.y -= self.dy;
-            skeleton.position.x -= self.dx * d_time;
-            skeleton.position = vec2(skeleton.position.x, skeleton.position.y);
+        if !self.collision_player {
+            let d_time = delta_time * (((144 - self.skeletons.len() / 3) % 21) + 2) as f32;
+            for skeleton in &mut self.skeletons {
+                skeleton.position.y -= self.dy;
+                skeleton.position.x -= self.dx * d_time;
+            }
+        }
+
+        if self.skeletons.len() == 0 {
+            self.wait += delta_time;
+            if self.wait > 3.0 {
+                self.wait = 0.0;
+                self.dx = 10.0;
+                self.dy = 0.0;
+                self.skeletons = Skeleton::init();
+            }
         }
 
         if !self.player.has_bolt {
@@ -366,6 +393,21 @@ impl geng::State for Game {
 
         if self.player.bolt_flight_pos.y > 810.0 {
             self.player.has_bolt = true;
+        }
+
+        if !self.player.has_bolt {
+            let aabb_bolt = Aabb2::point(vec2(16.0, 0.0))
+                .extend_positive(vec2(2.0, 16.0))
+                .translate(self.player.bolt_flight_pos);
+
+            for position in self.tombstones.position {
+                let aabb_tombstone = Aabb2::point(vec2(-15.0,0.0))
+                    .extend_positive(vec2(85.0,48.0))
+                    .translate(position);
+                if aabb_tombstone.intersects(&aabb_bolt) {
+                    self.player.has_bolt = true;
+                }
+            }
         }
     }
 
@@ -399,6 +441,13 @@ impl geng::State for Game {
             self.player.bolt_flight_pos,
             self.player.sprite[0],
         );
+        for skeleton in self.skeletons.clone() {
+            self.draw_bolt(
+                framebuffer,
+                vec2(skeleton.position.x - 20.0, skeleton.position.y - 20.0),
+                self.player.sprite[0],
+            );
+        }
         if self.game_over {
             self.draw_game_over(framebuffer, self.fade_in_out);
         }
